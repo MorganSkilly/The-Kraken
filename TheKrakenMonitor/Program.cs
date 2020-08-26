@@ -1,77 +1,89 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net.Http;
-using System.Reflection;
-using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Discord;
-using Discord.Commands;
 using Discord.WebSocket;
-using HtmlAgilityPack;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace TheKrakenMonitor
 {
     class Program
     {
+        private Alert alert;
 
-        static private DiscordSocketClient _client;
-        static private CommandService _commands;
-        static private IServiceProvider _services;
+        private readonly DiscordSocketClient _client;
+        private string token;
 
-        static void Main(string[] args) => new Program().RunBotAsync().GetAwaiter().GetResult();
-        public async Task RunBotAsync()
+        // Discord.Net heavily utilizes TAP for async, so we create
+        // an asynchronous context from the beginning.
+        static void Main(string[] args)
         {
-            _client = new DiscordSocketClient();
-            _commands = new CommandService();
-
-            _services = new ServiceCollection()
-                .AddSingleton(_client)
-                .AddSingleton(_commands)
-                .BuildServiceProvider();
-
-            string token = "NzAxOTgxNDQ2MjE0MTIzNTYw.Xp5ZKg.33tRJ0DHzmm3N2XIbJ6yo_5STFg";
-
-            _client.Log += _client_Log;
-
-            await RegisterCommandsAsync();
-
-            await _client.LoginAsync(TokenType.Bot, token);
-
-            await _client.StartAsync();
-
-            await Task.Delay(-1);
+            new Program().MainAsync().GetAwaiter().GetResult();
         }
 
-        private Task _client_Log(LogMessage arg)
+        public Program()
         {
-            Console.WriteLine(arg);
+            alert = new Alert(680010006489333805, 680010007072210947, "Test Monitor", "MorganSkilly#0001", "https://morgan.games/", "/html/body/main/article/div[1]/div/div[1]/div[2]/h1/strong", "Hello!");
+
+            Console.WriteLine("Enter Discord API Token: ");
+            token = Console.ReadLine();
+            Console.WriteLine();
+            Console.WriteLine("Connecting...");
+            Console.WriteLine();
+
+            // It is recommended to Dispose of a client when you are finished
+            // using it, at the end of your app's lifetime.
+            _client = new DiscordSocketClient();
+
+            _client.Log += LogAsync;
+            _client.Ready += ReadyAsync;
+            _client.MessageReceived += MessageReceivedAsync;
+        }
+
+        public async Task MainAsync()
+        {
+            // Tokens should be considered secret data, and never hard-coded.
+            try
+            {
+                await _client.LoginAsync(TokenType.Bot, token);
+                await _client.StartAsync();
+            }
+            catch(Exception ex)
+            {
+                Console.WriteLine(ex);
+            }
+
+            // Block the program until it is closed.
+            await Task.Delay(Timeout.Infinite);
+        }
+
+        private Task LogAsync(LogMessage log)
+        {
+            Console.WriteLine(log.ToString());
             return Task.CompletedTask;
         }
 
-        public async Task RegisterCommandsAsync()
+        // The Ready event indicates that the client has opened a
+        // connection and it is now safe to access the cache.
+        private Task ReadyAsync()
         {
-            _client.MessageReceived += HandleCommandAsync;
-            await _commands.AddModulesAsync(Assembly.GetEntryAssembly(), _services);
+            Console.WriteLine($"{_client.CurrentUser} is connected!");
+
+            return Task.CompletedTask;
         }
 
-        private async Task HandleCommandAsync(SocketMessage arg)
+        // This is not the recommended way to write a bot - consider
+        // reading over the Commands Framework sample.
+        private async Task MessageReceivedAsync(SocketMessage message)
         {
-            var message = arg as SocketUserMessage;
-
-            var context = new SocketCommandContext(_client, message);
-            if (message.Author.IsBot)
+            // The bot should never respond to itself.
+            if (message.Author.Id == _client.CurrentUser.Id)
                 return;
 
-            Console.WriteLine(message.ToString());
+            if (message.Content == "!ping")
+                await message.Channel.SendMessageAsync("Ping from " + message.Author + " recived successfully - " + DateTime.Now);
 
-            int argPos = 0;
-
-            await _commands.ExecuteAsync(
-            context: context,
-            argPos: argPos,
-            services: null);
+            if (message.Content == "!alerts")
+                await message.Channel.SendMessageAsync(null, false, alert.info().Build(), null);
         }
     }
 }
